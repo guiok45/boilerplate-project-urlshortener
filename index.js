@@ -84,6 +84,57 @@ app.post("/api/shorturl", async (req, res) => {
 });
 
 // GET: redirect
+app.post("/api/shorturl", async (req, res) => {
+  let originalUrl = req.body.url;
+
+  if (
+    !originalUrl.startsWith("http://") &&
+    !originalUrl.startsWith("https://")
+  ) {
+    originalUrl = "http://" + originalUrl;
+  }
+
+  let hostname;
+  try {
+    hostname = new URL(originalUrl).hostname;
+  } catch (err) {
+    return res.json({ error: "invalid url" });
+  }
+
+  dns.lookup(hostname, async (err) => {
+    if (err) {
+      return res.json({ error: "invalid url" });
+    }
+
+    try {
+      let foundUrl = await Url.findOne({ original_url: originalUrl });
+
+      if (foundUrl) {
+        return res.json({
+          original_url: foundUrl.original_url,
+          short_url: foundUrl.short_url,
+        });
+      }
+
+      const count = await Url.countDocuments();
+
+      const newUrl = new Url({
+        original_url: originalUrl,
+        short_url: count + 1,
+      });
+
+      await newUrl.save();
+
+      res.json({
+        original_url: newUrl.original_url,
+        short_url: newUrl.short_url,
+      });
+    } catch (err) {
+      res.json({ error: "server error" });
+    }
+  });
+});
+
 app.get("/api/shorturl/:short_url", async (req, res) => {
   const shortUrl = Number(req.params.short_url);
 
@@ -93,7 +144,7 @@ app.get("/api/shorturl/:short_url", async (req, res) => {
     return res.json({ error: "invalid url" });
   }
 
-  res.redirect(urlDoc.original_url);
+  return res.redirect(urlDoc.original_url);
 });
 
 app.listen(port, function () {
