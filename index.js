@@ -9,10 +9,6 @@ const dns = require("dns");
 const urlParser = require("url");
 const { error } = require("console");
 
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
 const client = new MongoClient(
   "mongodb+srv://guiokgui1_db_user:1234@cluster0.ckvrmuq.mongodb.net/urlshortener?appName=Cluster0"
 );
@@ -22,10 +18,20 @@ const urls = db.collection("urls");
 // Basic Configuration
 const port = process.env.PORT || 3000;
 
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 app.use("/public", express.static(`${process.cwd()}/public`));
 
 app.get("/", function (req, res) {
   res.sendFile(process.cwd() + "/views/index.html");
+});
+
+app.get("/api/shorturl/:short_url", async (req, res) => {
+  const shorturl = req.params.short_url;
+  const urlDoc = await urls.findOne({ short_url: +shorturl });
+  res.redirect(urlDoc.url);
 });
 
 app.post("/api/shorturl", function (req, res) {
@@ -49,12 +55,6 @@ app.post("/api/shorturl", function (req, res) {
       }
     }
   );
-});
-
-app.get("/api/shorturl/:short_url", async (req, res) => {
-  const shorturl = req.params.short_url;
-  const urlDoc = await urls.findOne({ short_url: +shorturl });
-  res.redirect(urlDoc.url);
 });
 
 app.listen(port, function () {
