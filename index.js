@@ -3,31 +3,24 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const mongoose = require("mongoose");
+const app = express();
+const { MongoClient } = require("mongodb");
 const dns = require("dns");
 const urlParser = require("url");
+const { error } = require("console");
 
-const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+const client = new MongoClient(
+  "mongodb+srv://guiokgui1_db_user:1234@cluster0.ckvrmuq.mongodb.net/urlshortener?appName=Cluster0"
+);
+const db = client.db("urlshortener");
+const urls = db.collection("urls");
 
 // Basic Configuration
 const port = process.env.PORT || 3000;
-
-// Middleware
-app.use(cors());
-app.use(express.urlencoded({ extended: false }));
-app.use(express.json());
-
-// MongoDB connection
-mongoose.connect(
-  "mongodb+srv://guiokgui1_db_user:1234@cluster0.ckvrmuq.mongodb.net/urlshortener?appName=Cluster0"
-);
-
-const urlSchema = new mongoose.Schema({
-  original_url: String,
-  short_url: Number,
-});
-
-const Url = mongoose.model("Url", urlSchema);
 
 app.use("/public", express.static(`${process.cwd()}/public`));
 
@@ -35,116 +28,33 @@ app.get("/", function (req, res) {
   res.sendFile(process.cwd() + "/views/index.html");
 });
 
-app.post("/api/shorturl", async (req, res) => {
-  const originalUrl = req.body.url;
+app.post("/api/shorturl", function (req, res) {
+  const url = req.body.url;
+  const dnslookup = dns.lookup(
+    urlParser.parse(url).hostname,
+    async (err, address) => {
+      if (!address) {
+        res.json({ error: "Invalid URL" });
+      } else {
+        const urlCount = await urls.countDocuments({});
 
-  // Validate URL format
-  let hostname;
-  try {
-    hostname = new URL(originalUrl).hostname;
-  } catch (err) {
-    return res.json({ error: "invalid url" });
-  }
+        const urlDoc = {
+          url,
+          short_url: urlCount,
+        };
 
-  // DNS lookup validation
-  dns.lookup(hostname, async (err) => {
-    if (err) {
-      return res.json({ error: "invalid url" });
-    }
-
-    try {
-      // Check if already exists
-      let foundUrl = await Url.findOne({ original_url: originalUrl });
-
-      if (foundUrl) {
-        return res.json({
-          original_url: foundUrl.original_url,
-          short_url: foundUrl.short_url,
-        });
+        const result = await urls.insertOne(urlDoc);
+        console.log(result);
+        res.json({ original_url: url, short_url: urlCount });
       }
-
-      // Create new short URL
-      const count = await Url.countDocuments();
-
-      const newUrl = new Url({
-        original_url: originalUrl,
-        short_url: count + 1,
-      });
-
-      await newUrl.save();
-
-      res.json({
-        original_url: newUrl.original_url,
-        short_url: newUrl.short_url,
-      });
-    } catch (err) {
-      res.json({ error: "server error" });
     }
-  });
-});
-
-// GET: redirect
-app.post("/api/shorturl", async (req, res) => {
-  let originalUrl = req.body.url;
-
-  if (
-    !originalUrl.startsWith("http://") &&
-    !originalUrl.startsWith("https://")
-  ) {
-    originalUrl = "http://" + originalUrl;
-  }
-
-  let hostname;
-  try {
-    hostname = new URL(originalUrl).hostname;
-  } catch (err) {
-    return res.json({ error: "invalid url" });
-  }
-
-  dns.lookup(hostname, async (err) => {
-    if (err) {
-      return res.json({ error: "invalid url" });
-    }
-
-    try {
-      let foundUrl = await Url.findOne({ original_url: originalUrl });
-
-      if (foundUrl) {
-        return res.json({
-          original_url: foundUrl.original_url,
-          short_url: foundUrl.short_url,
-        });
-      }
-
-      const count = await Url.countDocuments();
-
-      const newUrl = new Url({
-        original_url: originalUrl,
-        short_url: count + 1,
-      });
-
-      await newUrl.save();
-
-      res.json({
-        original_url: newUrl.original_url,
-        short_url: newUrl.short_url,
-      });
-    } catch (err) {
-      res.json({ error: "server error" });
-    }
-  });
+  );
 });
 
 app.get("/api/shorturl/:short_url", async (req, res) => {
-  const shortUrl = Number(req.params.short_url);
-
-  const urlDoc = await Url.findOne({ short_url: shortUrl });
-
-  if (!urlDoc) {
-    return res.json({ error: "invalid url" });
-  }
-
-  return res.redirect(urlDoc.original_url);
+  const shorturl = req.params.short_url;
+  const urlDoc = await urls.findOne({ short_url: +shorturl });
+  res.redirect(urlDoc.url);
 });
 
 app.listen(port, function () {
